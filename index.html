@@ -1,0 +1,517 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0a6c8a">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<style>
+:root{color-scheme:light}
+html{-webkit-text-size-adjust:100%}
+body{margin:0}
+img{max-width:100%}
+[hidden]{display:none!important}
+</style>
+<title>CNC Speeds & Feeds</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Arabic:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: a two-column workbench. Parameters on one side, a readout with a spindle dial and G-code on the other. Stacks to one column on a phone. */
+:root {
+  --bg: #eceff2;
+  --surface: #f7f9fb;
+  --inset: #e3e8ec;
+  --fg: #13202a;
+  --muted: #55677a;
+  --line: #c7d1d9;
+  --accent: #0a6c8a;
+  --accent-fg: #ffffff;
+  --warn: #8f4b00;
+  --warn-bg: #fbebd3;
+  --ok: #1d6a3e;
+  --ok-bg: #dcefe3;
+  --f-body: "IBM Plex Sans", "IBM Plex Sans Arabic", system-ui, sans-serif;
+  --f-display: "IBM Plex Sans Condensed", "IBM Plex Sans Arabic", system-ui, sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e151a; --surface: #162028; --inset: #0c1318; --fg: #e3e9ee; --muted: #8b9cab; --line: #2a3843;
+    --accent: #5bc0de; --accent-fg: #06222b; --warn: #f3b15a; --warn-bg: #2d2212; --ok: #6fcf97; --ok-bg: #13271b;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e151a; --surface: #162028; --inset: #0c1318; --fg: #e3e9ee; --muted: #8b9cab; --line: #2a3843;
+  --accent: #5bc0de; --accent-fg: #06222b; --warn: #f3b15a; --warn-bg: #2d2212; --ok: #6fcf97; --ok-bg: #13271b;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--f-body);
+  font-size: 15px;
+  line-height: 1.5;
+  padding-block: 24px 40px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+#app { max-width: 1000px; margin-inline: auto; display: flex; flex-direction: column; gap: 20px; }
+
+.top { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end; justify-content: space-between; }
+.brand { min-width: 0; flex: 1 1 320px; }
+.eyebrow { margin: 0 0 4px; font-family: var(--f-mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+h1 { margin: 0; font-family: var(--f-display); font-weight: 600; font-size: clamp(2rem, 6vw, 3rem); line-height: 1.05; letter-spacing: -.01em; text-wrap: balance; }
+.sub { margin: 8px 0 0; color: var(--muted); max-width: 60ch; }
+
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 4px; background: var(--surface); overflow: hidden; max-width: 100%; }
+.seg button {
+  font: inherit; font-size: 14px; color: var(--fg); background: transparent; border: 0; padding: 8px 14px; cursor: pointer;
+  border-inline-end: 1px solid var(--line); min-width: 0;
+}
+.seg button:last-child { border-inline-end: 0; }
+.seg button[aria-checked="true"], .seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-fg); font-weight: 600; }
+.seg button:focus-visible, select:focus-visible, input:focus-visible, .copy:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.seg.fill { display: flex; width: 100%; }
+.seg.fill button { flex: 1 1 0; }
+
+.grid { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+@media (max-width: 760px) { .grid { grid-template-columns: minmax(0, 1fr); } }
+
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 18px; display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.label { margin: 0; font-family: var(--f-mono); font-size: 12px; font-weight: 500; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+
+.fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 12px; }
+.field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.field.full { grid-column: 1 / -1; }
+.field label, .field .lbl { font-size: 13px; color: var(--muted); }
+input, select {
+  font: inherit; font-family: var(--f-mono); font-size: 15px; width: 100%; color: var(--fg); background: var(--inset);
+  border: 1px solid var(--line); border-radius: 4px; padding: 9px 10px; direction: ltr; text-align: start; min-width: 0;
+}
+[dir="rtl"] input { text-align: right; }
+select { font-family: var(--f-body); direction: inherit; }
+.hint { font-size: 12px; color: var(--muted); font-family: var(--f-mono); direction: ltr; unicode-bidi: plaintext; }
+[dir="rtl"] .hint { text-align: right; }
+
+.stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.stat { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding-bottom: 12px; border-bottom: 2px solid var(--accent); }
+.stat .lbl { font-size: 13px; color: var(--muted); }
+.big { margin: 0; direction: ltr; text-align: start; font-family: var(--f-mono); font-weight: 500; font-size: clamp(1.8rem, 5.2vw, 2.7rem); line-height: 1.1; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+[dir="rtl"] .big { text-align: right; }
+.unit { font-family: var(--f-body); font-size: 13px; font-weight: 400; color: var(--muted); }
+
+.dialrow { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; }
+.gauge { width: 150px; max-width: 100%; flex: 0 0 auto; }
+.g-track { fill: none; stroke: var(--line); stroke-width: 8; stroke-linecap: round; }
+.g-val { fill: none; stroke: var(--accent); stroke-width: 8; stroke-linecap: round; transition: stroke-dasharray .25s ease; }
+.g-val.warn { stroke: var(--warn); }
+.g-txt { fill: var(--muted); font-family: var(--f-mono); font-size: 7px; }
+.minor { margin: 0; display: grid; gap: 10px; flex: 1 1 160px; min-width: 0; }
+.minor div { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; border-bottom: 1px solid var(--line); padding-bottom: 6px; }
+.minor dt { color: var(--muted); font-size: 13px; }
+.minor dd { margin: 0; font-family: var(--f-mono); font-variant-numeric: tabular-nums; direction: ltr; text-align: end; }
+
+.status { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.status li { padding: 8px 10px; border-radius: 4px; font-size: 13px; }
+.status li.ok { background: var(--ok-bg); color: var(--ok); }
+.status li.warn { background: var(--warn-bg); color: var(--warn); }
+
+.codehead { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.copy { font: inherit; font-size: 13px; color: var(--accent); background: transparent; border: 1px solid var(--accent); border-radius: 4px; padding: 4px 12px; cursor: pointer; }
+pre { margin: 0; padding: 12px; background: var(--inset); border: 1px solid var(--line); border-radius: 4px; font-family: var(--f-mono); font-size: 13.5px; line-height: 1.6; overflow-x: auto; direction: ltr; text-align: left; user-select: all; }
+.small { margin: 0; font-size: 12.5px; color: var(--muted); }
+.formulas { display: grid; gap: 4px; font-family: var(--f-mono); font-size: 13px; direction: ltr; text-align: left; color: var(--fg); }
+
+.foot { display: flex; flex-direction: column; gap: 8px; }
+.foot p { margin: 0; color: var(--muted); font-size: 13px; max-width: 80ch; }
+.foot a { color: var(--accent); }
+
+@media (prefers-reduced-motion: reduce) { .g-val { transition: none; } }
+</style>
+
+</head>
+<body>
+<div id="app" lang="fr" dir="ltr">
+  <header class="top">
+    <div class="brand">
+      <p class="eyebrow">CNC82 · <span dir="ltr">@CNC4GM</span></p>
+      <h1>Speeds &amp; Feeds</h1>
+      <p class="sub" data-i18n="sub"></p>
+    </div>
+    <div class="seg" id="langs" role="group" aria-label="Language">
+      <button type="button" data-lang="ar" aria-pressed="false">العربية</button>
+      <button type="button" data-lang="fr" aria-pressed="false">Français</button>
+      <button type="button" data-lang="en" aria-pressed="false">English</button>
+    </div>
+  </header>
+
+  <main class="grid">
+    <section class="panel" aria-labelledby="h-in">
+      <h2 class="label" id="h-in" data-i18n="inputs"></h2>
+      <div class="fields">
+        <div class="field full">
+          <span class="lbl" id="l-mode" data-i18n="mode"></span>
+          <div class="seg fill" id="modes" role="radiogroup" aria-labelledby="l-mode">
+            <button type="button" role="radio" data-mode="milling" data-i18n="m-milling"></button>
+            <button type="button" role="radio" data-mode="turning" data-i18n="m-turning"></button>
+            <button type="button" role="radio" data-mode="drilling" data-i18n="m-drilling"></button>
+          </div>
+        </div>
+        <div class="field">
+          <label for="in-mat" data-i18n="material"></label>
+          <select id="in-mat"></select>
+        </div>
+        <div class="field">
+          <span class="lbl" id="l-tool" data-i18n="tool"></span>
+          <div class="seg fill" id="tools" role="radiogroup" aria-labelledby="l-tool">
+            <button type="button" role="radio" data-tool="hss" data-i18n="t-hss"></button>
+            <button type="button" role="radio" data-tool="carbide" data-i18n="t-carbide"></button>
+          </div>
+        </div>
+        <div class="field">
+          <label for="in-D" id="l-D"></label>
+          <input id="in-D" type="number" inputmode="decimal" min="0.1" step="any" value="10">
+        </div>
+        <div class="field" id="f-z">
+          <label for="in-z" data-i18n="teeth"></label>
+          <input id="in-z" type="number" inputmode="numeric" min="1" step="1" value="4">
+        </div>
+        <div class="field">
+          <label for="in-vc" data-i18n="vc"></label>
+          <input id="in-vc" type="number" inputmode="decimal" min="1" step="any">
+          <small class="hint" id="h-vc"></small>
+        </div>
+        <div class="field">
+          <label for="in-f" id="l-f"></label>
+          <input id="in-f" type="number" inputmode="decimal" min="0.001" step="any">
+        </div>
+        <div class="field" id="f-ap">
+          <label for="in-ap" data-i18n="ap"></label>
+          <input id="in-ap" type="number" inputmode="decimal" min="0" step="any" value="2">
+        </div>
+        <div class="field" id="f-ae">
+          <label for="in-ae" data-i18n="ae"></label>
+          <input id="in-ae" type="number" inputmode="decimal" min="0" step="any" value="5">
+        </div>
+        <div class="field full">
+          <label for="in-max" data-i18n="maxrpm"></label>
+          <input id="in-max" type="number" inputmode="numeric" min="0" step="100" value="6000">
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="h-out" aria-live="polite">
+      <h2 class="label" id="h-out" data-i18n="result"></h2>
+      <div class="stats">
+        <div class="stat">
+          <span class="lbl" data-i18n="rpm"></span>
+          <p class="big"><span id="o-rpm">—</span> <span class="unit" data-i18n="u-rpm"></span></p>
+        </div>
+        <div class="stat">
+          <span class="lbl" data-i18n="feed"></span>
+          <p class="big"><span id="o-feed">—</span> <span class="unit" data-i18n="u-feed"></span></p>
+        </div>
+      </div>
+      <div class="dialrow">
+        <svg class="gauge" viewBox="0 0 120 76" role="img" id="gauge" aria-label="RPM">
+          <path class="g-track" d="M10 60 A50 50 0 0 1 110 60"/>
+          <path class="g-val" id="g-val" d="M10 60 A50 50 0 0 1 110 60" stroke-dasharray="0.01 157.08"/>
+          <text class="g-txt" x="10" y="73" text-anchor="middle">0</text>
+          <text class="g-txt" id="g-max" x="110" y="73" text-anchor="middle">6000</text>
+        </svg>
+        <dl class="minor">
+          <div><dt data-i18n="vcreal"></dt><dd><span id="o-vc">—</span> m/min</dd></div>
+          <div><dt data-i18n="mrr"></dt><dd><span id="o-mrr">—</span> cm³/min</dd></div>
+        </dl>
+      </div>
+      <ul class="status" id="status"></ul>
+      <div>
+        <div class="codehead">
+          <h3 class="label" data-i18n="gcode"></h3>
+          <button type="button" class="copy" id="copy" data-i18n="copy"></button>
+        </div>
+        <pre id="gcode"></pre>
+        <p class="small" data-i18n="gnote" style="margin-top:8px"></p>
+      </div>
+      <div class="formulas" aria-label="Formulas">
+        <span>n = Vc × 1000 / (π × D)</span>
+        <span id="formula-f">F = fz × z × n</span>
+      </div>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <p data-i18n="note"></p>
+    <p><span data-i18n="made"></span> <a href="https://www.youtube.com/@CNC4GM" target="_blank" rel="noopener">CNC82 · @CNC4GM</a></p>
+  </footer>
+</div>
+
+<script>
+(function () {
+  var PI = Math.PI;
+  var $ = function (id) { return document.getElementById(id); };
+
+  /* Typical starting cutting speeds (m/min): [low, high, start]. Starting values only. */
+  var MAT = {
+    alu:       { n: { en: "Aluminium", fr: "Aluminium", ar: "ألمنيوم" }, hss: [100, 200, 150], carbide: [250, 500, 350], fz: 0.06, fn: 0.2 },
+    steel:     { n: { en: "Mild steel (C45)", fr: "Acier doux (C45)", ar: "فولاذ طري (C45)" }, hss: [25, 35, 30], carbide: [150, 220, 180], fz: 0.04, fn: 0.15 },
+    stainless: { n: { en: "Stainless steel", fr: "Inox", ar: "ستانلس ستيل" }, hss: [12, 18, 15], carbide: [80, 120, 100], fz: 0.03, fn: 0.12 },
+    cast:      { n: { en: "Cast iron", fr: "Fonte", ar: "حديد زهر" }, hss: [20, 30, 25], carbide: [100, 150, 120], fz: 0.05, fn: 0.15 },
+    brass:     { n: { en: "Brass", fr: "Laiton", ar: "نحاس أصفر" }, hss: [60, 90, 75], carbide: [150, 250, 200], fz: 0.05, fn: 0.15 },
+    plastic:   { n: { en: "Plastic (POM, nylon)", fr: "Plastique (POM, nylon)", ar: "بلاستيك (POM، نايلون)" }, hss: [100, 200, 120], carbide: [200, 400, 250], fz: 0.08, fn: 0.2 },
+    ti:        { n: { en: "Titanium", fr: "Titane", ar: "تيتانيوم" }, hss: [8, 12, 10], carbide: [40, 60, 50], fz: 0.03, fn: 0.1 }
+  };
+
+  var T = {
+    en: {
+      sub: "Cutting speed, spindle RPM and feed rate for milling, turning and drilling.",
+      inputs: "Parameters", mode: "Operation", "m-milling": "Milling", "m-turning": "Turning", "m-drilling": "Drilling",
+      material: "Material", tool: "Tool material", "t-hss": "HSS", "t-carbide": "Carbide",
+      "D-milling": "Tool diameter D (mm)", "D-turning": "Workpiece diameter D (mm)", "D-drilling": "Drill diameter D (mm)",
+      teeth: "Number of teeth z", vc: "Cutting speed Vc (m/min)",
+      "f-milling": "Feed per tooth fz (mm)", "f-turning": "Feed per revolution f (mm/rev)", "f-drilling": "Feed per revolution f (mm/rev)",
+      ap: "Depth of cut ap (mm)", ae: "Width of cut ae (mm)", maxrpm: "Machine max RPM (0 = no limit)",
+      result: "Result", rpm: "Spindle speed", "u-rpm": "RPM", feed: "Feed rate", "u-feed": "mm/min",
+      vcreal: "Actual Vc", mrr: "Material removal", gcode: "G-code starting lines", copy: "Copy", copied: "Copied",
+      gnote: "G99 is feed per revolution on Fanuc lathes (G95 on ISO and Siemens). Check your controller.",
+      suggested: "Suggested", okmsg: "Within the usual range for this material.",
+      capped: "Limited by the machine max RPM. Actual Vc is {a} m/min instead of {b}.",
+      outside: "Vc is outside the usual range for this material ({lo} to {hi} m/min).",
+      invalid: "Enter a diameter and a cutting speed to see the result.",
+      note: "Starting values only. Check your tool maker's catalog, the rigidity of your machine and the coolant, and begin below these figures. Wear safety glasses and keep the guard closed.",
+      made: "Made for the channel"
+    },
+    fr: {
+      sub: "Vitesse de coupe, vitesse de broche et avance pour le fraisage, le tournage et le perçage.",
+      inputs: "Paramètres", mode: "Opération", "m-milling": "Fraisage", "m-turning": "Tournage", "m-drilling": "Perçage",
+      material: "Matière", tool: "Matière de l'outil", "t-hss": "ARS (HSS)", "t-carbide": "Carbure",
+      "D-milling": "Diamètre de l'outil D (mm)", "D-turning": "Diamètre de la pièce D (mm)", "D-drilling": "Diamètre du foret D (mm)",
+      teeth: "Nombre de dents z", vc: "Vitesse de coupe Vc (m/min)",
+      "f-milling": "Avance par dent fz (mm)", "f-turning": "Avance par tour f (mm/tr)", "f-drilling": "Avance par tour f (mm/tr)",
+      ap: "Profondeur de passe ap (mm)", ae: "Largeur de coupe ae (mm)", maxrpm: "Vitesse max de la machine, tr/min (0 = sans limite)",
+      result: "Résultat", rpm: "Vitesse de broche", "u-rpm": "tr/min", feed: "Vitesse d'avance", "u-feed": "mm/min",
+      vcreal: "Vc réelle", mrr: "Débit de copeaux", gcode: "Lignes G-code de départ", copy: "Copier", copied: "Copié",
+      gnote: "G99 = avance par tour sur les tours Fanuc (G95 en ISO et Siemens). Vérifiez votre commande numérique.",
+      suggested: "Conseillé", okmsg: "Dans la plage habituelle pour cette matière.",
+      capped: "Limité par la vitesse max de la machine. Vc réelle : {a} m/min au lieu de {b}.",
+      outside: "Vc hors de la plage habituelle pour cette matière ({lo} à {hi} m/min).",
+      invalid: "Saisissez un diamètre et une vitesse de coupe pour voir le résultat.",
+      note: "Valeurs de départ uniquement. Vérifiez le catalogue du fabricant d'outils, la rigidité de la machine et l'arrosage, et commencez en dessous de ces valeurs. Portez des lunettes de protection et gardez le carter fermé.",
+      made: "Fait pour la chaîne"
+    },
+    ar: {
+      sub: "سرعة القطع وسرعة الدوران ومعدل التغذية للتفريز والخراطة والثقب.",
+      inputs: "المعطيات", mode: "العملية", "m-milling": "تفريز", "m-turning": "خراطة", "m-drilling": "ثقب",
+      material: "المادة", tool: "مادة الأداة", "t-hss": "HSS", "t-carbide": "كربيد",
+      "D-milling": "قطر الأداة D (مم)", "D-turning": "قطر القطعة D (مم)", "D-drilling": "قطر الريشة D (مم)",
+      teeth: "عدد الأسنان z", vc: "سرعة القطع Vc (م/د)",
+      "f-milling": "التغذية لكل سن fz (مم)", "f-turning": "التغذية لكل دورة f (مم/دورة)", "f-drilling": "التغذية لكل دورة f (مم/دورة)",
+      ap: "عمق القطع ap (مم)", ae: "عرض القطع ae (مم)", maxrpm: "أقصى سرعة دوران للآلة (0 = بلا حد)",
+      result: "النتيجة", rpm: "سرعة الدوران", "u-rpm": "د/د", feed: "معدل التغذية", "u-feed": "مم/د",
+      vcreal: "سرعة القطع الفعلية", mrr: "حجم المادة المزالة", gcode: "أسطر G-code للبداية", copy: "نسخ", copied: "تم النسخ",
+      gnote: "G99 تعني التغذية لكل دورة في مخارط Fanuc (و G95 في ISO وSiemens). راجع وحدة التحكم في آلتك.",
+      suggested: "المقترح", okmsg: "ضمن المجال المعتاد لهذه المادة.",
+      capped: "محدودة بأقصى سرعة للآلة. سرعة القطع الفعلية {a} م/د بدلاً من {b}.",
+      outside: "سرعة القطع خارج المجال المعتاد لهذه المادة ({lo} إلى {hi} م/د).",
+      invalid: "أدخل القطر وسرعة القطع لتظهر النتيجة.",
+      note: "هذه قيم بداية فقط. راجع كتالوج مصنّع الأداة وصلابة الآلة والتبريد، وابدأ بقيم أقل منها. ارتدِ نظارات واقية وأبقِ الباب الواقي مغلقاً.",
+      made: "صُنع لقناة"
+    }
+  };
+
+  var S = { lang: "fr", mode: "milling", mat: "steel", tool: "carbide", vcDirty: false, fDirty: false };
+  try {
+    var saved = localStorage.getItem("ss-lang");
+    if (saved && T[saved]) { S.lang = saved; }
+    else {
+      var nl = (navigator.language || "").slice(0, 2);
+      if (T[nl]) S.lang = nl;
+    }
+  } catch (e) {}
+
+  function t(k) { return T[S.lang][k] || T.en[k] || k; }
+  function num(id) { return parseFloat($(id).value); }
+  function fmt(v, d) {
+    var s = v.toFixed(d || 0);
+    var p = s.split(".");
+    p[0] = p[0].replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+    return p.join(".");
+  }
+  function clean(v) { return String(parseFloat(v.toFixed(3))); }
+
+  function suggestVc() { return MAT[S.mat][S.tool][2]; }
+  function suggestF() {
+    if (S.mode === "milling") return MAT[S.mat].fz;
+    if (S.mode === "turning") return MAT[S.mat].fn;
+    var D = num("in-D");
+    return D > 0 ? parseFloat((0.02 * D).toFixed(3)) : 0.1;
+  }
+
+  function resetSuggestions() {
+    S.vcDirty = false; S.fDirty = false;
+    $("in-vc").value = suggestVc();
+    $("in-f").value = clean(suggestF());
+  }
+
+  function buildMaterials() {
+    var sel = $("in-mat");
+    sel.innerHTML = "";
+    Object.keys(MAT).forEach(function (k) {
+      var o = document.createElement("option");
+      o.value = k; o.textContent = MAT[k].n[S.lang];
+      sel.appendChild(o);
+    });
+    sel.value = S.mat;
+  }
+
+  function applyLang() {
+    var app = $("app");
+    app.lang = S.lang;
+    app.dir = S.lang === "ar" ? "rtl" : "ltr";
+    var nodes = app.querySelectorAll("[data-i18n]");
+    for (var i = 0; i < nodes.length; i++) nodes[i].textContent = t(nodes[i].getAttribute("data-i18n"));
+    buildMaterials();
+    $("l-D").textContent = t("D-" + S.mode);
+    $("l-f").textContent = t("f-" + S.mode);
+    var lb = $("langs").querySelectorAll("button");
+    for (var j = 0; j < lb.length; j++) lb[j].setAttribute("aria-pressed", String(lb[j].getAttribute("data-lang") === S.lang));
+    var mb = $("modes").querySelectorAll("button");
+    for (var m = 0; m < mb.length; m++) mb[m].setAttribute("aria-checked", String(mb[m].getAttribute("data-mode") === S.mode));
+    var tb = $("tools").querySelectorAll("button");
+    for (var n = 0; n < tb.length; n++) tb[n].setAttribute("aria-checked", String(tb[n].getAttribute("data-tool") === S.tool));
+    $("f-z").hidden = S.mode !== "milling";
+    $("f-ae").hidden = S.mode !== "milling";
+    $("f-ap").hidden = S.mode === "drilling";
+    $("formula-f").textContent = S.mode === "milling" ? "F = fz × z × n" : "F = f × n";
+    calc();
+  }
+
+  function setStatus(items) {
+    var ul = $("status");
+    ul.innerHTML = "";
+    items.forEach(function (it) {
+      var li = document.createElement("li");
+      li.className = it.cls; li.textContent = it.text;
+      ul.appendChild(li);
+    });
+  }
+
+  function dash() {
+    ["o-rpm", "o-feed", "o-vc", "o-mrr"].forEach(function (id) { $(id).textContent = "—"; });
+    $("gcode").textContent = "";
+    $("g-val").setAttribute("stroke-dasharray", "0.01 157.08");
+    setStatus([{ cls: "warn", text: t("invalid") }]);
+  }
+
+  function calc() {
+    var r = MAT[S.mat][S.tool];
+    $("h-vc").textContent = t("suggested") + ": " + r[0] + "–" + r[1] + " m/min";
+
+    var D = num("in-D"), vc = num("in-vc"), f = num("in-f"), z = num("in-z");
+    var ap = num("in-ap"), ae = num("in-ae"), max = num("in-max");
+    if (!(D > 0) || !(vc > 0) || !(f > 0) || (S.mode === "milling" && !(z > 0))) { dash(); return; }
+
+    var nCalc = vc * 1000 / (PI * D);
+    var n = nCalc, capped = false;
+    if (max > 0 && nCalc > max) { n = max; capped = true; }
+    var vcReal = PI * D * n / 1000;
+    var F = S.mode === "milling" ? f * z * n : f * n;
+
+    var mrr = null;
+    if (S.mode === "milling" && ap >= 0 && ae >= 0) mrr = ap * ae * F / 1000;
+    if (S.mode === "turning" && ap >= 0) mrr = vcReal * f * ap;
+
+    $("o-rpm").textContent = fmt(n, 0);
+    $("o-feed").textContent = fmt(F, 0);
+    $("o-vc").textContent = fmt(vcReal, 1);
+    $("o-mrr").textContent = mrr === null ? "—" : fmt(mrr, 1);
+
+    var g = $("g-val");
+    var frac = max > 0 ? Math.min(n / max, 1) : 0;
+    g.setAttribute("stroke-dasharray", Math.max(frac * 157.08, 0.01).toFixed(2) + " 157.08");
+    g.setAttribute("class", "g-val" + (capped ? " warn" : ""));
+    $("g-max").textContent = max > 0 ? fmt(max, 0) : "—";
+    $("gauge").setAttribute("aria-label", "RPM " + fmt(n, 0));
+
+    var items = [];
+    if (capped) {
+      items.push({ cls: "warn", text: t("capped").replace("{a}", fmt(vcReal, 1)).replace("{b}", fmt(vc, 1)) });
+    } else if (vc < r[0] || vc > r[1]) {
+      items.push({ cls: "warn", text: t("outside").replace("{lo}", r[0]).replace("{hi}", r[1]) });
+    } else {
+      items.push({ cls: "ok", text: t("okmsg") });
+    }
+    setStatus(items);
+
+    var rpmI = Math.round(n);
+    var code;
+    if (S.mode === "milling") code = "G97 S" + rpmI + " M03\nG94 F" + Math.round(F);
+    else code = "G97 S" + rpmI + " M03\nG99 F" + clean(f);
+    $("gcode").textContent = code;
+  }
+
+  function copyText() {
+    var txt = $("gcode").textContent;
+    var btn = $("copy");
+    var done = function () {
+      btn.textContent = t("copied");
+      setTimeout(function () { btn.textContent = t("copy"); }, 1500);
+    };
+    var fallback = function () {
+      var r = document.createRange();
+      r.selectNodeContents($("gcode"));
+      var s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+    };
+    try {
+      navigator.clipboard.writeText(txt).then(done, fallback);
+    } catch (e) { fallback(); }
+  }
+
+  /* events */
+  $("langs").addEventListener("click", function (e) {
+    var b = e.target.closest("button[data-lang]"); if (!b) return;
+    S.lang = b.getAttribute("data-lang");
+    try { localStorage.setItem("ss-lang", S.lang); } catch (err) {}
+    applyLang();
+  });
+  $("modes").addEventListener("click", function (e) {
+    var b = e.target.closest("button[data-mode]"); if (!b) return;
+    S.mode = b.getAttribute("data-mode");
+    resetSuggestions(); applyLang();
+  });
+  $("tools").addEventListener("click", function (e) {
+    var b = e.target.closest("button[data-tool]"); if (!b) return;
+    S.tool = b.getAttribute("data-tool");
+    resetSuggestions(); applyLang();
+  });
+  $("in-mat").addEventListener("change", function () {
+    S.mat = this.value; resetSuggestions(); calc();
+  });
+  $("in-vc").addEventListener("input", function () { S.vcDirty = true; calc(); });
+  $("in-f").addEventListener("input", function () { S.fDirty = true; calc(); });
+  $("in-D").addEventListener("input", function () {
+    if (S.mode === "drilling" && !S.fDirty) $("in-f").value = clean(suggestF());
+    calc();
+  });
+  ["in-z", "in-ap", "in-ae", "in-max"].forEach(function (id) { $(id).addEventListener("input", calc); });
+  $("copy").addEventListener("click", copyText);
+
+  resetSuggestions();
+  applyLang();
+})();
+</script>
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function () {
+    navigator.serviceWorker.register('sw.js').catch(function () {});
+  });
+}
+</script>
+</body>
+</html>

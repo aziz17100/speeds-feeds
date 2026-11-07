@@ -1,0 +1,32 @@
+{
+  "name": "CNC Speeds & Feeds",
+  "short_name": "Speeds & Feeds",
+  "description": "Cutting speed, spindle RPM and feed rate for milling, turning and drilling. AR / FR / EN.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#eceff2",
+  "theme_color": "#0a6c8a",
+  "lang": "fr",
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
