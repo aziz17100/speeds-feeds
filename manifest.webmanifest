@@ -1,7 +1,7 @@
 {
-  "name": "CNC Speeds & Feeds",
-  "short_name": "Speeds & Feeds",
-  "description": "Cutting speed, spindle RPM and feed rate for milling, turning and drilling. AR / FR / EN.",
+  "name": "CNC Toolkit",
+  "short_name": "CNC Toolkit",
+  "description": "Speeds & feeds calculator and G-code generator for milling, turning and drilling. AR / FR / EN.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",

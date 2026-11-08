@@ -15,7 +15,7 @@ body{margin:0}
 img{max-width:100%}
 [hidden]{display:none!important}
 </style>
-<title>CNC Speeds & Feeds</title>
+<title>CNC Toolkit</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Arabic:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
@@ -51,6 +51,7 @@ img{max-width:100%}
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 body {
   background: var(--bg);
   color: var(--fg);
@@ -132,6 +133,16 @@ pre { margin: 0; padding: 12px; background: var(--inset); border: 1px solid var(
 .foot p { margin: 0; color: var(--muted); font-size: 13px; max-width: 80ch; }
 .foot a { color: var(--accent); }
 
+textarea {
+  font: inherit; font-family: var(--f-mono); font-size: 14px; width: 100%; min-height: 96px; color: var(--fg);
+  background: var(--inset); border: 1px solid var(--line); border-radius: 4px; padding: 9px 10px;
+  direction: ltr; text-align: left; resize: vertical; min-width: 0;
+}
+textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+#tabs { align-self: flex-start; }
+#g-cv { width: 100%; height: 240px; display: block; background: var(--inset); border: 1px solid var(--line); border-radius: 4px; }
+.gc-out pre { max-height: 360px; overflow: auto; }
+
 @media (prefers-reduced-motion: reduce) { .g-val { transition: none; } }
 </style>
 
@@ -141,7 +152,7 @@ pre { margin: 0; padding: 12px; background: var(--inset); border: 1px solid var(
   <header class="top">
     <div class="brand">
       <p class="eyebrow">CNC82 · <span dir="ltr">@CNC4GM</span></p>
-      <h1>Speeds &amp; Feeds</h1>
+      <h1>CNC Toolkit</h1>
       <p class="sub" data-i18n="sub"></p>
     </div>
     <div class="seg" id="langs" role="group" aria-label="Language">
@@ -151,7 +162,12 @@ pre { margin: 0; padding: 12px; background: var(--inset); border: 1px solid var(
     </div>
   </header>
 
-  <main class="grid">
+  <nav class="seg" id="tabs" role="group" aria-label="Tools">
+    <button type="button" data-tab="sf" data-g="tab-sf" aria-pressed="true"></button>
+    <button type="button" data-tab="gc" data-g="tab-gc" aria-pressed="false"></button>
+  </nav>
+
+  <main class="grid" id="tab-sf">
     <section class="panel" aria-labelledby="h-in">
       <h2 class="label" id="h-in" data-i18n="inputs"></h2>
       <div class="fields">
@@ -243,6 +259,41 @@ pre { margin: 0; padding: 12px; background: var(--inset); border: 1px solid var(
         <span>n = Vc × 1000 / (π × D)</span>
         <span id="formula-f">F = fz × z × n</span>
       </div>
+    </section>
+  </main>
+
+  <main class="grid" id="tab-gc" hidden>
+    <section class="panel" aria-labelledby="g-h-in">
+      <h2 class="label" id="g-h-in" data-g="g-in"></h2>
+      <div class="fields" id="g-fields">
+        <div class="field full">
+          <label for="g-op" data-g="g-op"></label>
+          <select id="g-op"></select>
+        </div>
+        <div class="field full" id="g-dia-wrap">
+          <span class="lbl" id="g-l-dia" data-g="g-dialect"></span>
+          <div class="seg fill" id="g-dia" role="radiogroup" aria-labelledby="g-l-dia">
+            <button type="button" role="radio" data-dia="fanuc" data-g="d-fanuc"></button>
+            <button type="button" role="radio" data-dia="grbl" data-g="d-grbl"></button>
+          </div>
+        </div>
+      </div>
+      <p class="small" id="g-zero"></p>
+    </section>
+
+    <section class="panel gc-out" aria-labelledby="g-h-out" aria-live="polite">
+      <h2 class="label" id="g-h-out" data-g="g-prev"></h2>
+      <canvas id="g-cv" role="img" aria-label="Toolpath preview"></canvas>
+      <p class="small" data-g="g-legend"></p>
+      <ul class="status" id="g-status"></ul>
+      <div>
+        <div class="codehead">
+          <h3 class="label" data-g="g-out"></h3>
+          <button type="button" class="copy" id="g-copy" data-g="g-copy"></button>
+        </div>
+        <pre id="g-code"></pre>
+      </div>
+      <p class="small" data-g="g-note"></p>
     </section>
   </main>
 
@@ -504,6 +555,502 @@ pre { margin: 0; padding: 12px; background: var(--inset); border: 1px solid var(
 
   resetSuggestions();
   applyLang();
+})();
+</script>
+
+<script>
+/* G-code generators (pure functions, no DOM). Z0 = top of stock. */
+var GC = (function () {
+  function mkn(fan) {
+    return function (v) {
+      var s = String(+v.toFixed(3));
+      if (s === "-0") s = "0";
+      if (fan && s.indexOf(".") < 0) s += ".";
+      return s;
+    };
+  }
+  function steps(total, ap) {
+    var k = Math.ceil(total / ap - 1e-9), out = [];
+    for (var i = 1; i <= k; i++) out.push(Math.min(i * ap, total));
+    return out;
+  }
+  function rows(a, b, step) {
+    var out = [a], v = a;
+    while (v < b - 1e-9) { v = Math.min(v + step, b); out.push(v); }
+    return out;
+  }
+  function head(p, fan, name) {
+    if (fan) return ["%", "O0001 (" + name + ")", "G21 G90 G17 G40 G49 G80 G94", "T1 M06", "S" + Math.round(p.S) + " M03", "G54"];
+    return ["(" + name + ")", "G21 G90 G17 G94", "M3 S" + Math.round(p.S)];
+  }
+  function foot(p, fan, n) {
+    return fan ? ["G00 Z" + n(p.safe), "M05", "M30", "%"] : ["G0 Z" + n(p.safe), "M5", "M2"];
+  }
+  function finish(L, p, fan, n) {
+    var f = foot(p, fan, n);
+    if (L[L.length - 1] === f[0]) f.shift();
+    return L.concat(f);
+  }
+
+  function genDrill(p, fan) {
+    var n = mkn(fan), G0 = fan ? "G00" : "G0", G1 = fan ? "G01" : "G1";
+    var P = p.pts, L = head(p, fan, "DRILL " + P.length + " HOLES");
+    L.push(G0 + " Z" + n(p.safe));
+    if (fan) {
+      L.push(G0 + " X" + n(P[0][0]) + " Y" + n(P[0][1]));
+      L.push("G98 " + (p.peck > 0 ? "G83" : "G81") + " X" + n(P[0][0]) + " Y" + n(P[0][1]) + " Z" + n(-p.depth) + " R" + n(p.R) + (p.peck > 0 ? " Q" + n(p.peck) : "") + " F" + n(p.plunge));
+      for (var i = 1; i < P.length; i++) L.push("X" + n(P[i][0]) + " Y" + n(P[i][1]));
+      L.push("G80");
+    } else {
+      var zs = p.peck > 0 ? steps(p.depth, p.peck) : [p.depth];
+      P.forEach(function (pt) {
+        L.push(G0 + " X" + n(pt[0]) + " Y" + n(pt[1]));
+        L.push(G0 + " Z" + n(p.R));
+        zs.forEach(function (d, i) {
+          L.push(G1 + " Z" + n(-d) + " F" + n(p.plunge));
+          if (i < zs.length - 1) { L.push(G0 + " Z" + n(p.R)); L.push(G0 + " Z" + n(-d + 0.5)); }
+        });
+        L.push(G0 + " Z" + n(p.safe));
+      });
+    }
+    return finish(L, p, fan, n);
+  }
+
+  function genFace(p, fan) {
+    var n = mkn(fan), G0 = fan ? "G00" : "G0", G1 = fan ? "G01" : "G1";
+    var L = head(p, fan, "FACE " + p.W + "X" + p.L);
+    var r = p.D / 2, x0 = -(r + 1), x1 = p.W + r + 1;
+    var ys = rows(0, p.L, p.D * p.step / 100);
+    L.push(G0 + " Z" + n(p.safe));
+    steps(p.depth, p.ap).forEach(function (d) {
+      L.push(G0 + " X" + n(x0) + " Y" + n(0));
+      L.push(G0 + " Z" + n(p.R));
+      L.push(G1 + " Z" + n(-d) + " F" + n(p.plunge));
+      ys.forEach(function (y, i) {
+        if (i > 0) L.push(G1 + " Y" + n(y) + " F" + n(p.F));
+        L.push(G1 + " X" + n(i % 2 ? x0 : x1) + " F" + n(p.F));
+      });
+      L.push(G0 + " Z" + n(p.R));
+    });
+    return finish(L, p, fan, n);
+  }
+
+  function genPocket(p, fan) {
+    var n = mkn(fan), G0 = fan ? "G00" : "G0", G1 = fan ? "G01" : "G1";
+    var L = head(p, fan, "POCKET " + p.W + "X" + p.L);
+    var r = p.D / 2, xa = r, xb = p.W - r, ya = r, yb = p.L - r;
+    var ys = rows(ya, yb, p.D * p.step / 100);
+    L.push(G0 + " Z" + n(p.safe));
+    L.push(G0 + " X" + n(xa) + " Y" + n(ya));
+    L.push(G0 + " Z" + n(p.R));
+    steps(p.depth, p.ap).forEach(function (d) {
+      L.push(G1 + " Z" + n(-d) + " F" + n(p.plunge));
+      ys.forEach(function (y, i) {
+        if (i > 0) L.push(G1 + " Y" + n(y) + " F" + n(p.F));
+        L.push(G1 + " X" + n(i % 2 ? xa : xb) + " F" + n(p.F));
+      });
+      L.push(G1 + " X" + n(xa) + " Y" + n(ya) + " F" + n(p.F));
+      L.push(G1 + " Y" + n(yb));
+      L.push(G1 + " X" + n(xb));
+      L.push(G1 + " Y" + n(ya));
+      L.push(G1 + " X" + n(xa));
+    });
+    L.push(G0 + " Z" + n(p.R));
+    return finish(L, p, fan, n);
+  }
+
+  function genTurn(p) {
+    var n = mkn(true), L = [];
+    L.push("%", "O0001 (TURN OD " + p.sdia + " TO " + p.fdia + ")", "G21 G40 G99", "T0101", "G97 S" + Math.round(p.S) + " M03");
+    L.push("G00 X" + n(p.sdia + 2) + " Z" + n(2));
+    L.push("G00 Z" + n(0), "G01 X" + n(-1) + " F" + n(p.F), "G00 Z" + n(2));
+    function pass(x, f) {
+      L.push("G00 X" + n(x), "G01 Z" + n(-p.lcut) + " F" + n(f), "G00 X" + n(x + 1), "G00 Z" + n(2));
+    }
+    var target = p.fdia + 2 * p.allow, x = p.sdia, xs = [];
+    while (x - 2 * p.ap > target + 1e-9) { x -= 2 * p.ap; xs.push(x); }
+    if (target < p.sdia - 1e-9) xs.push(target);
+    xs.forEach(function (v) { pass(v, p.F); });
+    if (p.allow > 0) pass(p.fdia, p.ff);
+    L.push("G00 X" + n(p.sdia + 10) + " Z" + n(10), "M05", "M30", "%");
+    return L;
+  }
+
+  function pos() { for (var i = 0; i < arguments.length; i++) if (!(arguments[i] > 0 && isFinite(arguments[i]))) return false; return true; }
+  function nn() { for (var i = 0; i < arguments.length; i++) if (!(arguments[i] >= 0 && isFinite(arguments[i]))) return false; return true; }
+
+  function gen(op, p, dia) {
+    var fan = dia !== "grbl", warn = [];
+    if (op === "drill") {
+      if (!p.pts || !p.pts.length) return { err: "g-err-pts" };
+      if (!pos(p.S, p.plunge, p.depth) || !nn(p.R, p.peck, p.safe)) return { err: "g-err" };
+      if (p.safe < p.R) return { err: "g-err-safe" };
+      if (!fan) warn.push("g-warn-grbl");
+      return { code: genDrill(p, fan), warn: warn };
+    }
+    if (op === "face" || op === "pocket") {
+      if (!pos(p.S, p.D, p.F, p.plunge, p.depth, p.ap, p.W, p.L, p.step) || !nn(p.R, p.safe) || p.step > 100) return { err: "g-err" };
+      if (p.safe < p.R) return { err: "g-err-safe" };
+      if (op === "pocket") {
+        if (p.W < p.D - 1e-9 || p.L < p.D - 1e-9) return { err: "g-err-pocket" };
+        warn.push("g-warn-plunge");
+        return { code: genPocket(p, fan), warn: warn };
+      }
+      return { code: genFace(p, fan), warn: warn };
+    }
+    if (op === "turn") {
+      if (!pos(p.S, p.F, p.sdia, p.fdia, p.lcut, p.ap) || !nn(p.allow)) return { err: "g-err" };
+      if (p.allow > 0 && !pos(p.ff)) return { err: "g-err" };
+      if (p.fdia >= p.sdia) return { err: "g-err-dia" };
+      return { code: genTurn(p), warn: warn };
+    }
+    return { err: "g-err" };
+  }
+
+  /* Reads G0/G1 moves (and canned drilling) back out of the program for the preview. */
+  function parse(lines, lathe) {
+    var pos0 = { x: null, y: null, z: null }, mode = null, segs = [], dots = [];
+    function P(o) {
+      if (lathe) return (o.z == null || o.x == null) ? null : [o.z, o.x / 2];
+      return (o.x == null || o.y == null) ? null : [o.x, o.y];
+    }
+    lines.forEach(function (raw) {
+      var line = raw.replace(/\([^)]*\)/g, "");
+      var gre = /G(\d+)/g, m;
+      while ((m = gre.exec(line))) {
+        var g = parseInt(m[1], 10);
+        if (g === 0) mode = "r"; else if (g === 1) mode = "f"; else if (g === 81 || g === 83) mode = "d"; else if (g === 80) mode = null;
+      }
+      var nw = { x: pos0.x, y: pos0.y, z: pos0.z }, has = {}, are = /([XYZ])(-?\d*\.?\d+)/g, a;
+      while ((a = are.exec(line))) { var k = a[1].toLowerCase(); nw[k] = parseFloat(a[2]); has[k] = true; }
+      if (!mode || !(has.x || has.y || has.z)) return;
+      var a0 = P(pos0), a1 = P(nw);
+      if (mode === "d") {
+        if ((has.x || has.y) && a1) dots.push(a1);
+      } else if (a0 && a1 && (a0[0] !== a1[0] || a0[1] !== a1[1])) {
+        segs.push({ a: a0, b: a1, r: mode === "r" });
+      } else if (mode === "f" && !lathe && has.z && !has.x && !has.y && a1) {
+        dots.push(a1);
+      }
+      pos0 = nw;
+    });
+    return { segs: segs, dots: dots };
+  }
+
+  return { gen: gen, parse: parse };
+})();
+</script>
+
+<script>
+(function () {
+  var app = document.getElementById("app");
+  var $ = function (id) { return document.getElementById(id); };
+
+  var G = {
+    en: {
+      "tab-sf": "Speeds & Feeds", "tab-gc": "G-code generator",
+      "g-in": "Program parameters", "g-op": "Operation",
+      "op-drill": "Drilling (holes)", "op-face": "Face milling", "op-pocket": "Rectangular pocket", "op-turn": "Turning (outside)",
+      "g-dialect": "Controller", "d-fanuc": "Fanuc / ISO", "d-grbl": "GRBL (3018)",
+      "g-pm": "Hole positions", "pm-list": "List of X,Y", "pm-circle": "Bolt circle",
+      "g-pts": "Holes, one per line: X,Y (mm)",
+      "g-ccount": "Number of holes", "g-cdia": "Circle diameter (mm)", "g-cang": "Start angle (deg)", "g-cx": "Center X (mm)", "g-cy": "Center Y (mm)",
+      "g-S": "Spindle speed S (RPM)", "g-D": "Tool diameter (mm)", "g-F": "Cutting feed F (mm/min)", "g-Ft": "Feed f (mm/rev)",
+      "g-Fz": "Plunge / drilling feed (mm/min)", "g-depth": "Total depth (mm)", "g-peck": "Peck depth (0 = none)",
+      "g-R": "Approach height above top (mm)", "g-safe": "Safe Z (mm)", "g-W": "Size X (mm)", "g-L": "Size Y (mm)",
+      "g-ap": "Depth per pass (mm)", "g-apt": "Radial depth per pass (mm)", "g-step": "Stepover (% of tool diameter)",
+      "g-sdia": "Stock diameter (mm)", "g-fdia": "Finished diameter (mm)", "g-lcut": "Length to turn (mm)",
+      "g-allow": "Finish allowance per side (mm)", "g-ff": "Finish feed (mm/rev)",
+      "g-out": "G-code", "g-prev": "Toolpath preview", "g-copy": "Copy", "g-copied": "Copied",
+      "g-legend": "Solid line = cutting, dashed = rapid, dots = holes.",
+      "g-zero-mill": "Origin: Z0 = top of the stock. X0 Y0 = lower-left corner of the stock (for drilling, you give the coordinates).",
+      "g-zero-turn": "Origin: Z0 = finished face, X = diameter. Tool T0101, feed per revolution (G99).",
+      "g-note": "Simulate first and run the program in the air (Z raised) before cutting. Check the origin, the tool and your controller's dialect. This code is a starting point.",
+      "g-ok": "Program ready: {n} lines.",
+      "g-err": "Check the values: every size, speed and feed must be a positive number.",
+      "g-err-pts": "Add at least one hole position (X,Y).",
+      "g-err-pocket": "The pocket must be at least as large as the tool.",
+      "g-err-dia": "The finished diameter must be smaller than the stock diameter.",
+      "g-err-safe": "Safe Z must not be lower than the approach height.",
+      "g-warn-plunge": "The tool plunges straight down: use a centre-cutting end mill or drill a start hole first.",
+      "g-warn-grbl": "GRBL has no canned cycles, so drilling is written as separate moves."
+    },
+    fr: {
+      "tab-sf": "Vitesses & avances", "tab-gc": "Générateur G-code",
+      "g-in": "Paramètres du programme", "g-op": "Opération",
+      "op-drill": "Perçage", "op-face": "Surfaçage", "op-pocket": "Poche rectangulaire", "op-turn": "Tournage (extérieur)",
+      "g-dialect": "Commande", "d-fanuc": "Fanuc / ISO", "d-grbl": "GRBL (3018)",
+      "g-pm": "Position des trous", "pm-list": "Liste X,Y", "pm-circle": "Cercle de perçage",
+      "g-pts": "Trous, un par ligne : X,Y (mm)",
+      "g-ccount": "Nombre de trous", "g-cdia": "Diamètre du cercle (mm)", "g-cang": "Angle de départ (°)", "g-cx": "Centre X (mm)", "g-cy": "Centre Y (mm)",
+      "g-S": "Vitesse de broche S (tr/min)", "g-D": "Diamètre de l'outil (mm)", "g-F": "Avance de coupe F (mm/min)", "g-Ft": "Avance f (mm/tr)",
+      "g-Fz": "Avance de plongée / perçage (mm/min)", "g-depth": "Profondeur totale (mm)", "g-peck": "Pas de débourrage (0 = aucun)",
+      "g-R": "Hauteur d'approche au-dessus de la pièce (mm)", "g-safe": "Z de sécurité (mm)", "g-W": "Dimension X (mm)", "g-L": "Dimension Y (mm)",
+      "g-ap": "Profondeur par passe (mm)", "g-apt": "Profondeur radiale par passe (mm)", "g-step": "Pas latéral (% du diamètre de l'outil)",
+      "g-sdia": "Diamètre brut (mm)", "g-fdia": "Diamètre fini (mm)", "g-lcut": "Longueur à tourner (mm)",
+      "g-allow": "Surépaisseur de finition par côté (mm)", "g-ff": "Avance de finition (mm/tr)",
+      "g-out": "G-code", "g-prev": "Aperçu de la trajectoire", "g-copy": "Copier", "g-copied": "Copié",
+      "g-legend": "Trait plein = coupe, pointillé = déplacement rapide, points = trous.",
+      "g-zero-mill": "Origine : Z0 = dessus de la pièce. X0 Y0 = coin inférieur gauche de la pièce (en perçage, vous donnez les coordonnées).",
+      "g-zero-turn": "Origine : Z0 = face finie, X = diamètre. Outil T0101, avance par tour (G99).",
+      "g-note": "Simulez d'abord et faites tourner le programme à vide (Z relevé) avant de couper. Vérifiez l'origine, l'outil et le dialecte de votre commande. Ce code est un point de départ.",
+      "g-ok": "Programme prêt : {n} lignes.",
+      "g-err": "Vérifiez les valeurs : chaque dimension, vitesse et avance doit être un nombre positif.",
+      "g-err-pts": "Ajoutez au moins une position de trou (X,Y).",
+      "g-err-pocket": "La poche doit être au moins aussi grande que l'outil.",
+      "g-err-dia": "Le diamètre fini doit être inférieur au diamètre brut.",
+      "g-err-safe": "Le Z de sécurité ne doit pas être inférieur à la hauteur d'approche.",
+      "g-warn-plunge": "L'outil plonge à la verticale : utilisez une fraise à centre coupant ou percez d'abord un trou de départ.",
+      "g-warn-grbl": "GRBL n'a pas de cycles fixes, le perçage est donc écrit en déplacements séparés."
+    },
+    ar: {
+      "tab-sf": "السرعة والتغذية", "tab-gc": "مولّد G-code",
+      "g-in": "معطيات البرنامج", "g-op": "العملية",
+      "op-drill": "ثقب", "op-face": "تسوية السطح (Face)", "op-pocket": "جيب مستطيل", "op-turn": "خراطة خارجية",
+      "g-dialect": "وحدة التحكم", "d-fanuc": "Fanuc / ISO", "d-grbl": "GRBL (3018)",
+      "g-pm": "مواقع الثقوب", "pm-list": "قائمة X,Y", "pm-circle": "دائرة ثقوب",
+      "g-pts": "الثقوب، سطر لكل ثقب: X,Y (مم)",
+      "g-ccount": "عدد الثقوب", "g-cdia": "قطر الدائرة (مم)", "g-cang": "زاوية البداية (درجة)", "g-cx": "المركز X (مم)", "g-cy": "المركز Y (مم)",
+      "g-S": "سرعة الدوران S (د/د)", "g-D": "قطر الأداة (مم)", "g-F": "تغذية القطع F (مم/د)", "g-Ft": "التغذية f (مم/دورة)",
+      "g-Fz": "تغذية الغطس / الثقب (مم/د)", "g-depth": "العمق الكلي (مم)", "g-peck": "عمق كل نقرة (0 = بدون)",
+      "g-R": "ارتفاع الاقتراب فوق القطعة (مم)", "g-safe": "ارتفاع الأمان Z (مم)", "g-W": "البعد X (مم)", "g-L": "البعد Y (مم)",
+      "g-ap": "العمق لكل تمريرة (مم)", "g-apt": "العمق الشعاعي لكل تمريرة (مم)", "g-step": "الخطوة الجانبية (% من قطر الأداة)",
+      "g-sdia": "قطر الخام (مم)", "g-fdia": "القطر النهائي (مم)", "g-lcut": "طول الخراطة (مم)",
+      "g-allow": "زيادة التشطيب لكل جهة (مم)", "g-ff": "تغذية التشطيب (مم/دورة)",
+      "g-out": "G-code", "g-prev": "معاينة المسار", "g-copy": "نسخ", "g-copied": "تم النسخ",
+      "g-legend": "الخط المتصل = قطع، المتقطع = حركة سريعة، النقاط = ثقوب.",
+      "g-zero-mill": "نقطة الأصل: Z0 = أعلى القطعة. X0 Y0 = الزاوية السفلية اليسرى للقطعة (في الثقب تعطي أنت الإحداثيات).",
+      "g-zero-turn": "نقطة الأصل: Z0 = الوجه النهائي، وX قطر. الأداة T0101، والتغذية لكل دورة (G99).",
+      "g-note": "جرّب المحاكاة أولاً وشغّل البرنامج في الهواء (Z مرفوع) قبل القطع. تحقق من نقطة الأصل والأداة ولغة وحدة التحكم. هذا الكود نقطة بداية.",
+      "g-ok": "البرنامج جاهز: {n} سطراً.",
+      "g-err": "راجع القيم: كل الأبعاد والسرعات والتغذية يجب أن تكون أرقاماً موجبة.",
+      "g-err-pts": "أضف موقع ثقب واحداً على الأقل (X,Y).",
+      "g-err-pocket": "يجب ألا يكون الجيب أصغر من الأداة.",
+      "g-err-dia": "يجب أن يكون القطر النهائي أصغر من قطر الخام.",
+      "g-err-safe": "ارتفاع الأمان يجب ألا يقل عن ارتفاع الاقتراب.",
+      "g-warn-plunge": "تغطس الأداة عمودياً: استعمل سكيناً قاطعة من المركز أو اثقب ثقب بداية أولاً.",
+      "g-warn-grbl": "GRBL لا يدعم دورات الثقب الجاهزة، لذلك كُتب الثقب كحركات منفصلة."
+    }
+  };
+
+  function lang() { var l = app.getAttribute("lang"); return G[l] ? l : "en"; }
+  function tg(k) { return G[lang()][k] || G.en[k] || k; }
+
+  var st = { op: "pocket", dia: "fanuc", last: null };
+
+  var FD = [
+    { id: "pm", type: "sel", k: "g-pm", ops: "drill", full: true },
+    { id: "pts", type: "area", k: "g-pts", ops: "drill", pm: "list", full: true, d: "10,10\n30,10\n30,30\n10,30" },
+    { id: "ccount", k: "g-ccount", ops: "drill", pm: "circle", d: 6 },
+    { id: "cdia", k: "g-cdia", ops: "drill", pm: "circle", d: 40 },
+    { id: "cang", k: "g-cang", ops: "drill", pm: "circle", d: 0 },
+    { id: "cx", k: "g-cx", ops: "drill", pm: "circle", d: 0 },
+    { id: "cy", k: "g-cy", ops: "drill", pm: "circle", d: 0 },
+    { id: "S", k: "g-S", ops: "drill face pocket turn", d: { drill: 3000, face: 2000, pocket: 4000, turn: 1500 } },
+    { id: "D", k: "g-D", ops: "face pocket", d: { face: 50, pocket: 8 } },
+    { id: "F", k: function (op) { return op === "turn" ? "g-Ft" : "g-F"; }, ops: "face pocket turn", d: { face: 400, pocket: 400, turn: 0.2 } },
+    { id: "Fz", k: "g-Fz", ops: "drill face pocket", d: { drill: 120, face: 150, pocket: 120 } },
+    { id: "depth", k: "g-depth", ops: "drill face pocket", d: { drill: 10, face: 1, pocket: 5 } },
+    { id: "peck", k: "g-peck", ops: "drill", d: 3 },
+    { id: "R", k: "g-R", ops: "drill face pocket", d: 2 },
+    { id: "safe", k: "g-safe", ops: "drill face pocket", d: 10 },
+    { id: "W", k: "g-W", ops: "face pocket", d: { face: 80, pocket: 40 } },
+    { id: "L", k: "g-L", ops: "face pocket", d: { face: 60, pocket: 30 } },
+    { id: "ap", k: function (op) { return op === "turn" ? "g-apt" : "g-ap"; }, ops: "face pocket turn", d: { face: 0.5, pocket: 1.5, turn: 1 } },
+    { id: "step", k: "g-step", ops: "face pocket", d: { face: 70, pocket: 40 } },
+    { id: "sdia", k: "g-sdia", ops: "turn", d: 30 },
+    { id: "fdia", k: "g-fdia", ops: "turn", d: 26 },
+    { id: "lcut", k: "g-lcut", ops: "turn", d: 40 },
+    { id: "allow", k: "g-allow", ops: "turn", d: 0.2 },
+    { id: "ff", k: "g-ff", ops: "turn", d: 0.08 }
+  ];
+
+  function build() {
+    var host = $("g-fields");
+    FD.forEach(function (f) {
+      var wrap = document.createElement("div");
+      wrap.className = "field" + (f.full ? " full" : "");
+      var lab = document.createElement("label");
+      lab.htmlFor = "g-" + f.id;
+      var inp;
+      if (f.type === "sel") inp = document.createElement("select");
+      else if (f.type === "area") { inp = document.createElement("textarea"); inp.rows = 4; inp.spellcheck = false; }
+      else { inp = document.createElement("input"); inp.type = "number"; inp.inputMode = "decimal"; inp.step = "any"; }
+      inp.id = "g-" + f.id;
+      wrap.appendChild(lab); wrap.appendChild(inp); host.appendChild(wrap);
+      f.wrap = wrap; f.lab = lab; f.inp = inp;
+      inp.addEventListener(f.type === "sel" ? "change" : "input", function () { if (f.id === "pm") vis(); run(); });
+    });
+  }
+
+  function fillSelect(sel, items) {
+    var cur = sel.value;
+    sel.innerHTML = "";
+    items.forEach(function (it) {
+      var o = document.createElement("option");
+      o.value = it[0]; o.textContent = tg(it[1]);
+      sel.appendChild(o);
+    });
+    if (cur) sel.value = cur;
+  }
+
+  function setDefaults() {
+    FD.forEach(function (f) {
+      if (f.d === undefined) return;
+      if (f.type === "area" && f.inp.value) return;
+      var v = (typeof f.d === "object") ? f.d[st.op] : f.d;
+      if (v !== undefined) f.inp.value = v;
+    });
+  }
+
+  function vis() {
+    var pm = $("g-pm").value;
+    FD.forEach(function (f) {
+      f.wrap.hidden = !(f.ops.split(" ").indexOf(st.op) >= 0 && (!f.pm || f.pm === pm));
+    });
+    $("g-dia-wrap").hidden = st.op === "turn";
+  }
+
+  function texts() {
+    var nodes = document.querySelectorAll("[data-g]");
+    for (var i = 0; i < nodes.length; i++) nodes[i].textContent = tg(nodes[i].getAttribute("data-g"));
+    fillSelect($("g-op"), [["drill", "op-drill"], ["face", "op-face"], ["pocket", "op-pocket"], ["turn", "op-turn"]]);
+    $("g-op").value = st.op;
+    fillSelect($("g-pm"), [["list", "pm-list"], ["circle", "pm-circle"]]);
+    FD.forEach(function (f) { f.lab.textContent = tg(typeof f.k === "function" ? f.k(st.op) : f.k); });
+    $("g-zero").textContent = tg(st.op === "turn" ? "g-zero-turn" : "g-zero-mill");
+    var db = $("g-dia").querySelectorAll("button");
+    for (var j = 0; j < db.length; j++) db[j].setAttribute("aria-checked", String(db[j].getAttribute("data-dia") === st.dia));
+  }
+
+  function nv(id) { return parseFloat($("g-" + id).value); }
+
+  function readPts() {
+    var out = [];
+    if ($("g-pm").value === "circle") {
+      var n = Math.round(nv("ccount")), d = nv("cdia"), a = nv("cang"), cx = nv("cx"), cy = nv("cy");
+      if (n > 0 && n <= 500 && d > 0 && isFinite(a) && isFinite(cx) && isFinite(cy)) {
+        for (var i = 0; i < n; i++) {
+          var t = (a + 360 * i / n) * Math.PI / 180;
+          out.push([cx + d / 2 * Math.cos(t), cy + d / 2 * Math.sin(t)]);
+        }
+      }
+    } else {
+      $("g-pts").value.split(/[\n;]+/).forEach(function (ln) {
+        var m = ln.trim().split(/[\s,]+/);
+        if (m.length >= 2) {
+          var x = parseFloat(m[0]), y = parseFloat(m[1]);
+          if (isFinite(x) && isFinite(y)) out.push([x, y]);
+        }
+      });
+    }
+    return out;
+  }
+
+  function add(cls, txt) {
+    var li = document.createElement("li");
+    li.className = cls; li.textContent = txt;
+    $("g-status").appendChild(li);
+  }
+
+  function run() {
+    var p = {
+      S: nv("S"), D: nv("D"), F: nv("F"), plunge: nv("Fz"), depth: nv("depth"), peck: nv("peck"), R: nv("R"), safe: nv("safe"),
+      W: nv("W"), L: nv("L"), ap: nv("ap"), step: nv("step"), sdia: nv("sdia"), fdia: nv("fdia"), lcut: nv("lcut"),
+      allow: nv("allow"), ff: nv("ff"), pts: st.op === "drill" ? readPts() : []
+    };
+    var r = GC.gen(st.op, p, st.dia);
+    $("g-status").innerHTML = "";
+    if (r.err) {
+      add("warn", tg(r.err));
+      $("g-code").textContent = "";
+      st.last = null;
+      draw();
+      return;
+    }
+    $("g-code").textContent = r.code.join("\n");
+    add("ok", tg("g-ok").replace("{n}", r.code.length));
+    r.warn.forEach(function (k) { add("warn", tg(k)); });
+    st.last = GC.parse(r.code, st.op === "turn");
+    draw();
+  }
+
+  function draw() {
+    var cv = $("g-cv"), w = cv.clientWidth || 320, h = 240, dpr = window.devicePixelRatio || 1;
+    cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
+    var c = cv.getContext("2d");
+    c.setTransform(dpr, 0, 0, dpr, 0, 0);
+    c.clearRect(0, 0, w, h);
+    var r = st.last;
+    if (!r || (!r.segs.length && !r.dots.length)) return;
+    var css = getComputedStyle(document.documentElement);
+    var col = function (v) { return css.getPropertyValue(v).trim(); };
+    var xs = [], ys = [];
+    r.segs.forEach(function (s) { xs.push(s.a[0], s.b[0]); ys.push(s.a[1], s.b[1]); });
+    r.dots.forEach(function (d) { xs.push(d[0]); ys.push(d[1]); });
+    var x0 = Math.min.apply(null, xs), x1 = Math.max.apply(null, xs), y0 = Math.min.apply(null, ys), y1 = Math.max.apply(null, ys);
+    var pad = 18, rx = (x1 - x0) || 1, ry = (y1 - y0) || 1;
+    var s = Math.min((w - 2 * pad) / rx, (h - 2 * pad) / ry);
+    var ox = (w - rx * s) / 2, oy = (h - ry * s) / 2;
+    function X(v) { return ox + (v - x0) * s; }
+    function Y(v) { return h - (oy + (v - y0) * s); }
+    if (x0 <= 0 && x1 >= 0 && y0 <= 0 && y1 >= 0) {
+      c.strokeStyle = col("--muted"); c.lineWidth = 1; c.setLineDash([]);
+      c.beginPath(); c.moveTo(X(0) - 7, Y(0)); c.lineTo(X(0) + 7, Y(0)); c.moveTo(X(0), Y(0) - 7); c.lineTo(X(0), Y(0) + 7); c.stroke();
+    }
+    c.lineJoin = "round";
+    r.segs.forEach(function (sg) {
+      c.beginPath();
+      c.setLineDash(sg.r ? [4, 4] : []);
+      c.strokeStyle = sg.r ? col("--muted") : col("--accent");
+      c.lineWidth = sg.r ? 1 : 1.8;
+      c.moveTo(X(sg.a[0]), Y(sg.a[1]));
+      c.lineTo(X(sg.b[0]), Y(sg.b[1]));
+      c.stroke();
+    });
+    c.setLineDash([]);
+    c.fillStyle = col("--warn");
+    r.dots.forEach(function (d) { c.beginPath(); c.arc(X(d[0]), Y(d[1]), 3.2, 0, Math.PI * 2); c.fill(); });
+  }
+
+  function copy() {
+    var btn = $("g-copy"), txt = $("g-code").textContent;
+    var done = function () { btn.textContent = tg("g-copied"); setTimeout(function () { btn.textContent = tg("g-copy"); }, 1500); };
+    var fallback = function () {
+      var rg = document.createRange(); rg.selectNodeContents($("g-code"));
+      var sl = window.getSelection(); sl.removeAllRanges(); sl.addRange(rg);
+    };
+    try { navigator.clipboard.writeText(txt).then(done, fallback); } catch (e) { fallback(); }
+  }
+
+  function refreshAll() { texts(); vis(); run(); }
+
+  build();
+  texts();
+  setDefaults();
+  vis();
+  run();
+
+  $("g-op").addEventListener("change", function () { st.op = this.value; setDefaults(); refreshAll(); });
+  $("g-dia").addEventListener("click", function (e) {
+    var b = e.target.closest("button[data-dia]"); if (!b) return;
+    st.dia = b.getAttribute("data-dia"); texts(); run();
+  });
+  $("tabs").addEventListener("click", function (e) {
+    var b = e.target.closest("button[data-tab]"); if (!b) return;
+    var t = b.getAttribute("data-tab");
+    $("tab-sf").hidden = t !== "sf";
+    $("tab-gc").hidden = t !== "gc";
+    var all = $("tabs").querySelectorAll("button");
+    for (var i = 0; i < all.length; i++) all[i].setAttribute("aria-pressed", String(all[i] === b));
+    if (t === "gc") run();
+  });
+  $("g-copy").addEventListener("click", copy);
+  new MutationObserver(refreshAll).observe(app, { attributes: true, attributeFilter: ["lang"] });
+  window.addEventListener("resize", function () { if (!$("tab-gc").hidden) draw(); });
+  if (window.matchMedia) {
+    try { window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw); } catch (e) {}
+  }
 })();
 </script>
 <script>
